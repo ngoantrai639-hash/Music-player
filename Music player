@@ -1,0 +1,292 @@
+-------------------------------------------------------------
+-- MUSIC PLAYER LOGIC
+-------------------------------------------------------------
+local MusicSettings = {
+    CustomRangeEnabled = false,
+    StartTime = 0,
+    EndTime = 0,
+    AutoReplay = false
+}
+
+local MusicTab = Window:CreateTab("Music Player", "music")
+
+MusicTab:CreateParagraph({Title = "Music Player Info", Content = "-File Location:Delta:Workspace/RayfieldConfigs/Music\n-Supported Formats: .mp3,.ogg,.wav.\n-Music Player 1.1.0 by Edzefd Team"})
+
+local musicFolder = "RayfieldConfigs/Music"
+if isfolder and makefolder then
+    if not isfolder("RayfieldConfigs") then
+        makefolder("RayfieldConfigs")
+    end
+    if not isfolder(musicFolder) then
+        makefolder(musicFolder)
+    end
+end
+
+local bgmSound = Instance.new("Sound")
+bgmSound.Parent = game:GetService("CoreGui")
+bgmSound.Volume = 1
+bgmSound.Looped = false
+
+local supportedFormats = {".mp3", ".wav", ".ogg", ".opus"}
+local musicFiles = {}
+local musicOptions = {}
+
+local function getValidMusicFiles()
+    local valid = {}
+     if listfiles then
+        pcall(function()
+             local files = listfiles(musicFolder)
+            for _, file in ipairs(files) do
+                  for _, format in ipairs(supportedFormats) do
+                    if string.sub(file, -#format):lower() == format then
+                         table.insert(valid, file)
+                         break
+                     end
+                end
+            end
+        end)
+    end
+    return valid
+end
+
+musicFiles = getValidMusicFiles()
+for _, file in ipairs(musicFiles) do
+    local fileName = file:match("([^/\\]+)$") or file
+    table.insert(musicOptions, fileName)
+end
+
+if #musicOptions == 0 then
+    table.insert(musicOptions, "No music found in folder")
+end
+
+local selectedFilePath = nil
+
+local MusicDropdown = MusicTab:CreateDropdown({
+     Name = "Select Music",
+    Options = musicOptions,
+    CurrentOption = {musicOptions[1] or ""},
+    MultipleOptions = false,
+    Flag = "SelectedMusic",
+    Callback = function(Option)
+        local chosenName = Option[1]
+         if chosenName and chosenName ~= "No music found in folder" then
+             for _, file in ipairs(musicFiles) do
+                 local fileName = file:match("([^/\\]+)$") or file
+                if fileName == chosenName then
+                    selectedFilePath = file
+                     if getcustomasset then
+                         pcall(function()
+                             bgmSound.SoundId = getcustomasset(file)
+                        end)
+                     else
+                         Rayfield:Notify({Title = "Error", Content = "Your executor missing getcustomasset", Duration = 3})
+                    end
+                    break
+                 end
+            end
+         end
+    end,
+})
+
+local NowPlayingLabel = MusicTab:CreateLabel("Now Playing: None\n[00:00:00:000 - 00:00:00:000]")
+
+task.spawn(function()
+    while task.wait(0.05) do -- Slightly faster update for MS accuracy
+        if bgmSound.IsPlaying or bgmSound.TimePosition > 0 then
+            local fileName = selectedFilePath and selectedFilePath:match("([^/\\]+)$") or "Unknown"
+            local current = bgmSound.TimePosition
+             local total = bgmSound.TimeLength
+            
+            -- Custom Range Logic
+            if bgmSound.IsPlaying then
+                if MusicSettings.CustomRangeEnabled and MusicSettings.EndTime > 0 and current >= MusicSettings.EndTime then
+                    if MusicSettings.AutoReplay then
+                         bgmSound.TimePosition = MusicSettings.StartTime
+                    else
+                        bgmSound:Stop()
+                    end
+                end
+             end
+
+            
+            local function formatTime(seconds)
+                if not seconds or seconds ~= seconds then seconds = 0 end
+                local h = math.floor(seconds / 3600)
+                local m = math.floor((seconds % 3600) / 60)
+                local s = math.floor(seconds % 60)
+                local ms = math.floor((seconds % 1) * 1000)
+                return string.format("%02d:%02d:%02d:%03d", h, m, s, ms)
+            end
+            
+            NowPlayingLabel:Set("Now Playing: " .. fileName .. "\n[" .. formatTime(current) .. " - " .. formatTime(total) .. "]")
+        else
+            NowPlayingLabel:Set("Now Playing: None\n[00:00:00:000 - 00:00:00:000]")
+        end
+    end
+end)
+
+bgmSound.Ended:Connect(function()
+    if MusicSettings.AutoReplay then
+        if MusicSettings.CustomRangeEnabled then
+            bgmSound.TimePosition = MusicSettings.StartTime
+        else
+            bgmSound.TimePosition = 0
+        end
+        bgmSound:Play()
+    end
+end)
+
+MusicTab:CreateButton({
+    Name = "Play",
+    Callback = function()
+        if bgmSound.SoundId ~= "" then
+             if MusicSettings.CustomRangeEnabled and bgmSound.TimePosition < MusicSettings.StartTime then
+                bgmSound.TimePosition = MusicSettings.StartTime
+            end
+            bgmSound:Play()
+        else
+            Rayfield:Notify({Title = "Notice", Content = "Select a valid track first.", Duration = 2})
+        end
+    end,
+})
+
+MusicTab:CreateButton({
+    Name = "Pause/Resume",
+    Callback = function()
+        if bgmSound.IsPlaying then
+            bgmSound:Pause()
+        else
+            bgmSound:Resume()
+        end
+    end,
+})
+
+MusicTab:CreateButton({
+    Name = "Stop",
+    Callback = function()
+        bgmSound:Stop()
+    end,
+})
+
+MusicTab:CreateButton({
+    Name = "Rewind 10s",
+     Callback = function()
+         bgmSound.TimePosition = math.max(0, bgmSound.TimePosition - 10)
+    end,
+})
+
+MusicTab:CreateButton({
+    Name = "Forward 10s",
+    Callback = function()
+        bgmSound.TimePosition = math.min(bgmSound.TimeLength, bgmSound.TimePosition + 10)
+    end,
+})
+
+MusicTab:CreateInput({
+    Name = "Jump to Time (MM:SS)",
+    PlaceholderText = "15:14",
+    RemoveTextAfterFocusLost = false,
+    Flag = "MusicTimeJump",
+    Callback = function(Text)
+        local m, s = Text:match("(%d+):(%d+)")
+         if m and s then
+             local targetTime = tonumber(m) * 60 + tonumber(s)
+            if targetTime <= bgmSound.TimeLength then
+                bgmSound.TimePosition = targetTime
+            end
+        end
+    end,
+})
+
+MusicTab:CreateToggle({
+    Name = "Enable Custom Start/End Time",
+    CurrentValue = false,
+    Flag = "MusicCustomRange",
+    Callback = function(Value) MusicSettings.CustomRangeEnabled = Value end,
+})
+
+MusicTab:CreateInput({
+    Name = "Start Time (MM:SS)",
+    PlaceholderText = "00:00",
+    RemoveTextAfterFocusLost = false,
+    Flag = "MusicStartTime",
+    Callback = function(Text)
+        local m, s = Text:match("(%d+):(%d+)")
+        if m and s then
+            MusicSettings.StartTime = tonumber(m) * 60 + tonumber(s)
+         end
+    end,
+})
+
+MusicTab:CreateInput({
+    Name = "End Time (MM:SS)",
+    PlaceholderText = "00:00",
+    RemoveTextAfterFocusLost = false,
+    Flag = "MusicEndTime",
+    Callback = function(Text)
+        local m, s = Text:match("(%d+):(%d+)")
+        if m and s then
+            MusicSettings.EndTime = tonumber(m) * 60 + tonumber(s)
+        end
+    end,
+})
+
+MusicTab:CreateToggle({
+     Name = "Auto Replay",
+    CurrentValue = false,
+    Flag = "MusicAutoReplay",
+    Callback = function(Value) MusicSettings.AutoReplay = Value end,
+})
+
+MusicTab:CreateButton({
+    Name = "Refresh List",
+    Callback = function()
+         musicFiles = getValidMusicFiles()
+         local newOptions = {}
+        for _, file in ipairs(musicFiles) do
+            local fileName = file:match("([^/\\]+)$") or file
+            table.insert(newOptions, fileName)
+        end
+        if #newOptions == 0 then
+            table.insert(newOptions, "No music found in folder")
+        end
+         MusicDropdown:Refresh(newOptions, true)
+    end,
+})
+
+MusicTab:CreateSlider({
+    Name = "Volume",
+    Range = {0, 200},
+    Increment = 1,
+    CurrentValue = 100,
+    Flag = "MusicVolume",
+    Callback = function(Value)
+        bgmSound.Volume = Value / 100
+    end,
+})
+
+local SpeedEnabled = false
+MusicTab:CreateToggle({
+    Name = "Enable Music Speed",
+    CurrentValue = false,
+    Flag = "MusicSpeedEnabled",
+    Callback = function(Value)
+        SpeedEnabled = Value
+        if not Value then
+            bgmSound.PlaybackSpeed = 1
+        end
+    end,
+})
+
+MusicTab:CreateSlider({
+    Name = "Music Speed",
+    Range = {0.1, 5.0},
+    Increment = 0.1,
+    CurrentValue = 1.0,
+    Flag = "MusicSpeed",
+    Callback = function(Value)
+        if SpeedEnabled then
+            bgmSound.PlaybackSpeed = Value
+        end
+    end,
+})
