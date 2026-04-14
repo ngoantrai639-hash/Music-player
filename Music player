@@ -1,5 +1,5 @@
 -------------------------------------------------------------
--- MUSIC PLAYER LOGIC
+-- MUSIC PLAYER V1.1.0 BY EDZEFD TEAM(RAYFIELD UI(
 -------------------------------------------------------------
 local MusicSettings = {
     CustomRangeEnabled = false,
